@@ -37,14 +37,13 @@ class Gate {
 
 class Conductor extends Thread {
 
-	Alley alley = new Alley();
-	
     final static int steps = 10;
 
     double basespeed = 6.0;          // Tiles per second
     double variation =  50;          // Percentage of base speed
 
     CarDisplayI cd;                  // GUI part
+    Semaphore[][] tiles;
 
     int no;                          // Car number
     Pos startpos;                    // Start position (provided by GUI)
@@ -55,14 +54,20 @@ class Conductor extends Thread {
     Pos curpos;                      // Current position 
     Pos newpos;                      // New position to go to
 
-    public Conductor(int no, CarDisplayI cd, Gate g) {
+    Semaphore curTile;				//Current tile semaphore
+    Semaphore newTile;				//New tile semaphore
+    
+    
+    public Conductor(int no, CarDisplayI cd, Gate g, Semaphore[][] tiles) {
 
+    	this.tiles = tiles;
         this.no = no;
         this.cd = cd;
         mygate = g;
         startpos = cd.getStartPos(no);
         barpos   = cd.getBarrierPos(no);  // For later use
-
+        
+        
         col = chooseColor();
 
         // special settings for car no. 0
@@ -106,22 +111,34 @@ class Conductor extends Thread {
         try {
             CarI car = cd.newCar(no, col, startpos);
             curpos = startpos;
+            curTile = tiles[curpos.row][curpos.col];
             cd.register(car);
 
+            
             while (true) { 
-
+            	
                 if (atGate(curpos)) { 
                     mygate.pass(); 
                     car.setSpeed(chooseSpeed());
                 }
                 
                 
-                
                 newpos = nextPos(curpos);
-
+                newTile = tiles[newpos.row][newpos.col];
+                
+                if(newTile != curTile)
+                	//Waits for new position to free up
+                	tiles[newpos.row][newpos.col].P();
+                
+                
                 car.driveTo(newpos);
+                //Frees up old position
+                if(newTile != curTile)
+                	tiles[curpos.row][curpos.col].V();
+                
 
                 curpos = newpos;
+                curTile = newTile;
             }
 
         } catch (Exception e) {
@@ -138,15 +155,35 @@ public class CarControl implements CarControlI{
     CarDisplayI cd;           // Reference to GUI
     Conductor[] conductor;    // Car controllers
     Gate[] gate;              // Gates
+    Semaphore[][] tiles;
+    public static final int ROWS = 11;
+    public static final int COLS = 12;
 
+    Semaphore tempSem;
+    
     public CarControl(CarDisplayI cd) {
         this.cd = cd;
         conductor = new Conductor[9];
         gate = new Gate[9];
-
+        tiles = new Semaphore[ROWS][COLS];
+        
+        //Setup tiles
+        for(int i = 0; i < ROWS; i++){
+        	for (int j = 0; j<COLS; j++){
+        		tiles[i][j] = new Semaphore(1);
+        	}
+        }
+        
+        //Setup Alley
+        tempSem = new Semaphore(1);
+        for (int i = 0; i < ROWS-1; i++) { tiles[i][0] = tempSem; }
+        //Adds the area around the shed to the alley
+        tiles[ROWS-2][1] = tempSem;
+        tiles[ROWS-2][2] = tempSem;
+        
         for (int no = 0; no < 9; no++) {
             gate[no] = new Gate();
-            conductor[no] = new Conductor(no,cd,gate[no]);
+            conductor[no] = new Conductor(no,cd,gate[no],tiles);
             conductor[no].setName("Conductor-" + no);
             conductor[no].start();
         } 
@@ -196,17 +233,6 @@ public class CarControl implements CarControlI{
 }
 
 
-class Alley{
-	private Semaphore sem = new Semaphore(1);
- 	   public void enter(int no) throws InterruptedException{
- 		   sem.P();
-
- 	   }
-
- 	   public void leave(int no){
- 		   sem.V();
- 	   }
- 	}
 
 
 
