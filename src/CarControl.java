@@ -37,6 +37,8 @@ class Gate {
 
 class Conductor extends Thread {
 
+	Alley alley = new Alley();
+	
     final static int steps = 10;
 
     double basespeed = 6.0;          // Tiles per second
@@ -112,7 +114,9 @@ class Conductor extends Thread {
                     mygate.pass(); 
                     car.setSpeed(chooseSpeed());
                 }
-
+                
+                
+                
                 newpos = nextPos(curpos);
 
                 car.driveTo(newpos);
@@ -192,6 +196,17 @@ public class CarControl implements CarControlI{
 }
 
 
+class Alley{
+	private Semaphore sem = new Semaphore(1);
+ 	   public void enter(int no) throws InterruptedException{
+ 		   sem.P();
+
+ 	   }
+
+ 	   public void leave(int no){
+ 		   sem.V();
+ 	   }
+ 	}
 
 
 
