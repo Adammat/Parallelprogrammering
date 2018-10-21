@@ -112,9 +112,9 @@ class Conductor extends Thread {
         return pos.equals(startpos);
     }
 
-	private boolean atBarrier(Pos curpos2, int no2) {
+	private boolean atBarrier(Pos pos) {
 		//Checks if current car is at the barrier
-		return (no2 < 5 && no2!=0 && curpos2.row == upperBarRow && curpos.col == startpos.col) || (no2 >= 5 && curpos2.row == lowerBarRow &&  curpos.col == startpos.col);
+		return pos.equals(cd.getBarrierPos(no));
 	}
     
     public void run() {
@@ -130,11 +130,13 @@ class Conductor extends Thread {
                 if (atGate(curpos)) { 
                     mygate.pass(); 
                     car.setSpeed(chooseSpeed());
-                }
-                
-                if(atBarrier(curpos, no)){
+                } else if (atBarrier(curpos)) {
                 	bar.sync();
                 }
+                
+                
+                	
+                
                 
                 newpos = nextPos(curpos);
                 newTile = tiles[newpos.row][newpos.col];
@@ -256,13 +258,13 @@ class Barrier {
 	Boolean flag = false;
 	Semaphore sem = new Semaphore(0);
 	int counter = 0;
-	final int numberOfCars = 8;
+	final int numberOfCars = 9;
 	
 	public void sync() throws InterruptedException {
 		if(flag) {
 			counter++;
 			if (counter == numberOfCars) {
-				//Frees the other 7 cars
+				//Frees the other cars
 				for (int i = 1; i <counter; i++){
 					sem.V();
 				}
@@ -277,7 +279,7 @@ class Barrier {
 	
 	public void on(){
 		flag = true;
-		counter = 0;
+		
 		
 	}
 	
@@ -287,6 +289,7 @@ class Barrier {
 		for (int i = 0; i <counter; i++){
 			sem.V();
 		}
+		counter = 0;
 	}
 	
 	
