@@ -38,6 +38,8 @@ class Gate {
 class Conductor extends Thread {
 
     final static int steps = 10;
+    static final int upperBarRow = 4;
+    static final int lowerBarRow = 5;
 
     double basespeed = 6.0;          // Tiles per second
     double variation =  50;          // Percentage of base speed
@@ -57,12 +59,15 @@ class Conductor extends Thread {
     Semaphore curTile;				//Current tile semaphore
     Semaphore newTile;				//New tile semaphore
     
+    Barrier bar;
     
-    public Conductor(int no, CarDisplayI cd, Gate g, Semaphore[][] tiles) {
+    
+    public Conductor(int no, CarDisplayI cd, Gate g, Semaphore[][] tiles, Barrier bar) {
 
     	this.tiles = tiles;
         this.no = no;
         this.cd = cd;
+        this.bar = bar;
         mygate = g;
         startpos = cd.getStartPos(no);
         barpos   = cd.getBarrierPos(no);  // For later use
@@ -107,6 +112,11 @@ class Conductor extends Thread {
         return pos.equals(startpos);
     }
 
+	private boolean atBarrier(Pos curpos2, int no2) {
+		//Checks if current car is at the barrier
+		return (no2 < 5 && no2!=0 && curpos2.row == upperBarRow && curpos.col == startpos.col) || (no2 >= 5 && curpos2.row == lowerBarRow &&  curpos.col == startpos.col);
+	}
+    
     public void run() {
         try {
             CarI car = cd.newCar(no, col, startpos);
@@ -122,6 +132,9 @@ class Conductor extends Thread {
                     car.setSpeed(chooseSpeed());
                 }
                 
+                if(atBarrier(curpos, no)){
+                	bar.sync();
+                }
                 
                 newpos = nextPos(curpos);
                 newTile = tiles[newpos.row][newpos.col];
@@ -148,17 +161,21 @@ class Conductor extends Thread {
         }
     }
 
+
+
 }
 
 public class CarControl implements CarControlI{
 
+	Barrier bar;
     CarDisplayI cd;           // Reference to GUI
     Conductor[] conductor;    // Car controllers
     Gate[] gate;              // Gates
     Semaphore[][] tiles;
-    public static final int ROWS = 11;
-    public static final int COLS = 12;
+    static final int ROWS = 11;
+    static final int COLS = 12;
 
+    
     Semaphore tempSem;
     
     public CarControl(CarDisplayI cd) {
@@ -166,6 +183,7 @@ public class CarControl implements CarControlI{
         conductor = new Conductor[9];
         gate = new Gate[9];
         tiles = new Semaphore[ROWS][COLS];
+        bar = new Barrier();
         
         //Setup tiles
         for(int i = 0; i < ROWS; i++){
@@ -176,14 +194,14 @@ public class CarControl implements CarControlI{
         
         //Setup Alley
         tempSem = new Semaphore(1);
-        for (int i = 0; i < ROWS-1; i++) { tiles[i][0] = tempSem; }
+        for (int i = 1; i < ROWS-1; i++) { tiles[i][0] = tempSem; }
         //Adds the area around the shed to the alley
         tiles[ROWS-2][1] = tempSem;
         tiles[ROWS-2][2] = tempSem;
         
         for (int no = 0; no < 9; no++) {
             gate[no] = new Gate();
-            conductor[no] = new Conductor(no,cd,gate[no],tiles);
+            conductor[no] = new Conductor(no,cd,gate[no],tiles,bar);
             conductor[no].setName("Conductor-" + no);
             conductor[no].start();
         } 
@@ -198,11 +216,12 @@ public class CarControl implements CarControlI{
     }
 
     public void barrierOn() { 
-        cd.println("Barrier On not implemented in this version");
+        bar.on();
+    	
     }
 
-    public void barrierOff() { 
-        cd.println("Barrier Off not implemented in this version");
+    public void barrierOff() {
+    	bar.off();
     }
 
     public void barrierSet(int k) { 
@@ -232,6 +251,46 @@ public class CarControl implements CarControlI{
 
 }
 
+class Barrier {
+	
+	Boolean flag = false;
+	Semaphore sem = new Semaphore(0);
+	int counter = 0;
+	final int numberOfCars = 8;
+	
+	public void sync() throws InterruptedException {
+		if(flag) {
+			counter++;
+			if (counter == numberOfCars) {
+				//Frees the other 7 cars
+				for (int i = 1; i <counter; i++){
+					sem.V();
+				}
+				//Reset counter
+				counter = 0;
+			} else {
+				sem.P();		
+			}
+		}
+	}
+	
+	
+	public void on(){
+		flag = true;
+		counter = 0;
+		
+	}
+	
+	public void off(){
+		flag = false;
+		//Frees the trapped cars
+		for (int i = 0; i <counter; i++){
+			sem.V();
+		}
+	}
+	
+	
+}
 
 
 
