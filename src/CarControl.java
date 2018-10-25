@@ -61,14 +61,15 @@ class Conductor extends Thread {
     Semaphore newTile;				//New tile semaphore
     
     Barrier bar;
-    //Alley alley;
-    //Boolean alleyFlag;
+    Alley alley;
+    Boolean alleyFlag;
     
     
-    public Conductor(int no, CarDisplayI cd, Gate g, Semaphore[][] semTiles, /*Boolean[][] alleyTiles, Alley alley,*/ Barrier bar) {
+    public Conductor(int no, CarDisplayI cd, Gate g, Semaphore[][] semTiles, Boolean[][] alleyTiles, Alley alley, Barrier bar) {
 
     	
-    	//this.alleyTiles = alleyTiles;
+    	this.alley = alley;
+    	this.alleyTiles = alleyTiles;
     	this.semTiles = semTiles;
         this.no = no;
         this.cd = cd;
@@ -76,7 +77,7 @@ class Conductor extends Thread {
         mygate = g;
         startpos = cd.getStartPos(no);
         barpos   = cd.getBarrierPos(no);  // For later use
-        //alleyFlag = false;
+        alleyFlag = false;
         
         col = chooseColor();
 
@@ -146,18 +147,20 @@ class Conductor extends Thread {
                 newpos = nextPos(curpos);
                 newTile = semTiles[newpos.row][newpos.col];
                 
+              //Check if we are entering the alley
+                if(alleyTiles[newpos.row][newpos.col] && !alleyFlag){
+                	alley.enter(no);
+                	alleyFlag = true;
+                } else if(!alleyTiles[newpos.row][newpos.col] && alleyFlag){
+                	alley.leave(no);
+                	alleyFlag = false;
+                }
+                
                 if(newTile != curTile){	//Waits for new position to free up
                 	semTiles[newpos.row][newpos.col].P();
                 }
                 
-                //Check if we are entering the alley
-//                if(alleyTiles[newpos.row][newpos.col]){
-//                	alley.enter(no);
-//                	alleyFlag = true;
-//                } else if(alleyFlag){
-//                	alley.leave(no);
-//                	alleyFlag = false;
-//                }
+                
                 
                 
                 car.driveTo(newpos);
@@ -189,7 +192,7 @@ public class CarControl implements CarControlI{
     Gate[] gate;              // Gates
     Semaphore[][] semTiles;
     Boolean[][] alleyTiles;
-    //Alley alley;
+    Alley alley;
     static final int ROWS = 11;
     static final int COLS = 12;
 
@@ -203,26 +206,25 @@ public class CarControl implements CarControlI{
         semTiles = new Semaphore[ROWS][COLS];
         alleyTiles = new Boolean[ROWS][COLS];
         bar = new Barrier();
-        //alley = new Alley();
+        alley = new Alley();
         
         //Setup tiles
         for(int i = 0; i < ROWS; i++){
         	for (int j = 0; j<COLS; j++){
         		semTiles[i][j] = new Semaphore(1);
-        		//alleyTiles[i][j] = false;
+        		alleyTiles[i][j] = false;
         	}
         }
         
         //Setup Alley
-        tempSem = new Semaphore(1);
-        for (int i = 1; i < ROWS-1; i++) { /*alley*/semTiles[i][0] = tempSem/*true*/; }
+        for (int i = 1; i < ROWS-1; i++) { alleyTiles[i][0] = true; }
         //Adds the area around the shed to the alley
-        /*alley*/semTiles[ROWS-2][1] = tempSem/*true*/;
-        /*alley*/semTiles[ROWS-2][2] = tempSem/*true*/;
+        alleyTiles[ROWS-2][1] = true;
+        alleyTiles[ROWS-2][2] = true;
         
         for (int no = 0; no < 9; no++) {
             gate[no] = new Gate();
-            conductor[no] = new Conductor(no,cd,gate[no], semTiles, /*alleyTiles, alley,*/ bar);
+            conductor[no] = new Conductor(no,cd,gate[no], semTiles, alleyTiles, alley, bar);
             conductor[no].setName("Conductor-" + no);
             conductor[no].start();
         } 
@@ -277,53 +279,55 @@ public class CarControl implements CarControlI{
 
 }
 
-//class Alley{
-//
-//	final int MAX_NO_CARS_ALLEY = 4;
-//	int carCounter = 0;
-//	int waitCars = 0;
-//	Boolean curDir = false; //False = up, True = down
-//	Semaphore[] sems = new Semaphore[MAX_NO_CARS_ALLEY];
-//	Boolean[] waiting = new Boolean[MAX_NO_CARS_ALLEY];  //Flag if the car is waiting
-//	
-//	public Alley(){
-//		for (int i = 0; i< MAX_NO_CARS_ALLEY; i++){
-//			sems[i] = new Semaphore(0);
-//			waiting[i] = false;
-//			
-//		}
-//	}
-//	
-//	public void enter(int no) throws InterruptedException{
-//		if(carCounter != 0 && ((no>4 && !curDir) || (no<=4 && curDir))){
-//			if (no > 4) {
-//				waiting[no-5] = true;
-//				sems[no-5].P();
-//			} else {
-//				waiting[no-1] = true;
-//				sems[no-1].P();
-//			}
-//		}
-//		carCounter++;
-//		curDir = no>4;
-//	}
-//	
-//	public void leave(int no){
-//		if((no>4 && curDir) || (no <= 4 && !curDir) ){
-//			if (carCounter > 1){
-//				carCounter--;
-//			} else {
-//				carCounter = 0;
-//				for (int i = 0; i< MAX_NO_CARS_ALLEY; i++){
-//					if(waiting[i]){
-//						sems[i].V();
-//						waiting[i] = false;
-//					}
-//				}
-//			}
-//		}
-//	}	
-//}
+class Alley{
+
+	final int MAX_NO_CARS_ALLEY = 4;
+	int carCounter = 0;
+	int waitCars = 0;
+	Boolean curDir = false; //False = up, True = down
+	Semaphore[] sems = new Semaphore[MAX_NO_CARS_ALLEY];
+	Boolean[] waiting = new Boolean[MAX_NO_CARS_ALLEY];  
+	
+	public Alley(){
+		for (int i = 0; i< MAX_NO_CARS_ALLEY; i++){
+			sems[i] = new Semaphore(0);
+			waiting[i] = false;
+			
+		}
+	}
+	
+	public void enter(int no) throws InterruptedException{
+		//If the car is going in the wrong direction, and it there are cars in the alley, wait
+		if(carCounter != 0 && no>4 != curDir){
+			waiting[no%4] = true;
+			sems[no%4].P();
+			
+		}
+		carCounter++;
+		curDir = no>4;
+	}
+	
+	public void leave(int no){
+		//Checks if the current car matches the direction
+		if(no>4 == curDir){
+			if (carCounter > 1){
+				//In case of more cars we go down
+				carCounter--;
+			} else {
+				//In case that this is the last car, release the waiting cars
+				carCounter = 0;
+				for (int i = 0; i< MAX_NO_CARS_ALLEY; i++){
+					if(waiting[i]){
+						sems[i].V();
+						waiting[i] = false;
+					}
+				}
+			}
+		}
+	}
+	
+	
+}
 
 
 
@@ -371,6 +375,7 @@ class Barrier {
 		
 	}
 	
+	//Setting the amount of cars that the barrier keeps back
 	public void threshold(int k) throws IndexOutOfBoundsException{
 		if(k <= MAX_NO_CARS){
 			//Sets the new threshold
