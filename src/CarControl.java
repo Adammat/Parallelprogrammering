@@ -62,28 +62,28 @@ class Conductor extends Thread {
     
     Barrier bar;
     Alley alley = new Alley();
-    Boolean alleyFlag;
+    Pos alleyEnter;
+    Pos alleyLeave;
     
     
-    
-    public Conductor(int no, CarDisplayI cd, Gate g, Semaphore[][] semTiles, Boolean[][] alleyTiles, Alley alley, Barrier bar) {
+    public Conductor(int no, CarDisplayI cd, Gate g, Semaphore[][] semTiles, Alley alley, Barrier bar, Pos alleyEnter, Pos alleyLeave) {
 
     	
-    	this.alley = alley;
-    	this.alleyTiles = alleyTiles;
-    	this.semTiles = semTiles;
+    	this.alleyEnter = alleyEnter;
+        this.alleyLeave = alleyLeave;
+        this.alley = alley;
+        this.semTiles = semTiles;
         this.no = no;
         this.cd = cd;
         this.bar = bar;
         mygate = g;
         startpos = cd.getStartPos(no);
         barpos   = cd.getBarrierPos(no);  // For later use
-        alleyFlag = false;
         
         col = chooseColor();
 
         // special settings for car no. 0
-        if (no == 0) {
+        if (true) {
             basespeed = -1.0;  
             variation = 0; 
         }
@@ -146,9 +146,8 @@ class Conductor extends Thread {
                 newpos = nextPos(curpos);
                 
               //Check if we are entering the alley
-                if(alleyTiles[newpos.row][newpos.col] && !alleyFlag){
+                if(newpos.equals(alleyEnter)){
                 	alley.enter(no);
-                	alleyFlag = true;
                 } 
                
                
@@ -160,9 +159,8 @@ class Conductor extends Thread {
                 semTiles[curpos.row][curpos.col].V();
                 
                 
-                if(!alleyTiles[newpos.row][newpos.col] && alleyFlag){
+                if(newpos.equals(alleyLeave)){
                 	alley.leave(no);
-                	alleyFlag = false;
                 }
                 curpos = newpos;
             }
@@ -189,7 +187,10 @@ public class CarControl implements CarControlI{
     Alley alley;
     static final int ROWS = 11;
     static final int COLS = 12;
+	
 
+    Pos[] alleyEnter;
+    Pos[] alleyLeave;
     
     Semaphore tempSem;
     
@@ -198,28 +199,35 @@ public class CarControl implements CarControlI{
         conductor = new Conductor[9];
         gate = new Gate[9];
         semTiles = new Semaphore[ROWS][COLS];
-        alleyTiles = new Boolean[ROWS][COLS];
         bar = new Barrier();
         alley = new Alley();
+        alleyEnter = new Pos[9];
+        alleyLeave = new Pos[9];
         
         //Setup tiles
         for(int i = 0; i < ROWS; i++){
         	for (int j = 0; j<COLS; j++){
         		semTiles[i][j] = new Semaphore(1);
-        		alleyTiles[i][j] = false;
         	}
         }
         
-
-        //Setup Alley
-        for (int i = 1; i < ROWS-1; i++) { alleyTiles[i][0] = true; }
-        //Adds the area around the shed to the alley
-        alleyTiles[ROWS-2][1] = true;
-        alleyTiles[ROWS-2][2] = true;
-        
+        Pos tempAlleyEnter;
+        Pos tempAlleyLeave;
         for (int no = 0; no < 9; no++) {
+        	//Setup alley enter and leave points
+        	if(no<3){
+        		tempAlleyEnter = new Pos(ROWS-3,0);
+        		tempAlleyLeave = new Pos(1,1);
+        	} else if (no < 5){
+        		tempAlleyEnter = new Pos(ROWS-2,2);
+        		tempAlleyLeave = new Pos(1,1);
+            } else {
+            	tempAlleyEnter = new Pos(1,0);
+            	tempAlleyLeave = new Pos(ROWS-1, 2);
+            }
+        	
             gate[no] = new Gate();
-            conductor[no] = new Conductor(no,cd,gate[no], semTiles, alleyTiles, alley, bar);
+            conductor[no] = new Conductor(no,cd,gate[no], semTiles, alley, bar, tempAlleyEnter, tempAlleyLeave);
             conductor[no].setName("Conductor-" + no);
             conductor[no].start();
         } 
@@ -235,7 +243,6 @@ public class CarControl implements CarControlI{
 
     public void barrierOn() { 
         bar.on();
-    	
     }
 
     public void barrierOff() {
@@ -245,7 +252,7 @@ public class CarControl implements CarControlI{
     public void barrierSet(int k) { 
         
         	try {
-				bar.threshold(k);
+				bar.barrierSet(k);
 			} catch (IndexOutOfBoundsException e) {
 				// Prints the error to the console
 				cd.println(e.toString());
@@ -276,17 +283,17 @@ public class CarControl implements CarControlI{
 
 class Alley{
 
-	final int MAX_NO_CARS_ALLEY = 4;
+	final int MAX_NO_CARS = 8;
 	int carCounter = 0;
 	int waitCars = 0;
 	Boolean curDir = false; //False = up, True = down
-	Semaphore[] sems = new Semaphore[MAX_NO_CARS_ALLEY];
-	Boolean[] waiting = new Boolean[MAX_NO_CARS_ALLEY];  
+	Semaphore[] sems = new Semaphore[MAX_NO_CARS];
+	Boolean[] waiting = new Boolean[MAX_NO_CARS];  
 	Semaphore lock = new Semaphore(1);
 	
 	
 	public Alley(){
-		for (int i = 0; i< MAX_NO_CARS_ALLEY; i++){
+		for (int i = 0; i< MAX_NO_CARS; i++){
 			sems[i] = new Semaphore(0);
 			waiting[i] = false;
 			
@@ -295,43 +302,49 @@ class Alley{
 	
 	public void enter(int no) throws InterruptedException{
 		
-		/*lock.P();
+		lock.P();
 		//If there are cars in the alley and the car is going in the wrong direction, wait
-		if(carCounter != 0 && no>4 != curDir){
-			waiting[no%4] = true;
+		while(carCounter != 0 && no>4 != curDir){
+			waiting[no-1] = true;
 			lock.V();
-			sems[no%4].P();
+			sems[no-1].P();
 			lock.P();
 		}
 		curDir = no>4;
 		carCounter++;
 		
 		lock.V();//*/
-		lock.P();
+		
 	}
 	
 	public void leave(int no){
-		/*try {lock.P();} catch (InterruptedException e) {}
+		try {lock.P();} catch (InterruptedException e) {}
 		//Checks if the current car matches the direction
 		if(no>4 == curDir){
 			carCounter--;
 			if (carCounter <= 0){
 				//In case that this is the last car, release the waiting cars
 				carCounter = 0;
-				for (int i = 0; i< MAX_NO_CARS_ALLEY; i++){
+				int offset;
+				if (no>4){
+					offset = 0;
+				} else {
+					offset = 4;
+				}
+				for (int i = offset; i< 4+offset; i++){
 					if(waiting[i]){
 						waiting[i] = false;
 						sems[i].V();
 					}
 				}
+				
 			}
-		}
-		lock.V();//*/
+		}//*/
 		lock.V();
 	}
 	
 	public String toString(){
-		return sems[0].toString();
+		return "Car Counter: "+carCounter;
 	}
 	
 }
@@ -348,6 +361,7 @@ class Barrier {
 	Boolean[] waiting = new Boolean[MAX_NO_CARS];  //Flag if the car is waiting
 	int counter = 0;
 	int threshold = MAX_NO_CARS;
+	//int newThreshold = threshold;
 	Semaphore lock = new Semaphore(1);
 	
 	
@@ -392,7 +406,7 @@ class Barrier {
 	}
 	
 	//Setting the amount of cars that the barrier keeps back
-	public void threshold(int k) throws IndexOutOfBoundsException{
+	public void barrierSet(int k) throws IndexOutOfBoundsException{
 		if(k <= MAX_NO_CARS){
 			try {lock.P();} catch (InterruptedException e) {}
 			//Sets the new threshold
@@ -418,6 +432,7 @@ class Barrier {
 			}
 			
 		}
+		//threshold = newThreshold;
 		
 	}
 	

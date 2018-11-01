@@ -2,7 +2,7 @@
 //Mandatory assignment
 //Course 02158 Concurrent Programming, DTU, Fall 2018
 
-//Hans Henrik Lovengreen      Oct 8, 2018
+//Hans Henrik Lovengreen      Oct 8, 26, 2018
 
 
 import java.awt.Color;
@@ -682,7 +682,7 @@ public class Cars extends JFrame implements CarDisplayI {
     static final int width      =   30;       // Width of text area
     static final int minhistory =   50;       // Min no. of lines kept
 
-    static final String version = "18.0";
+    static final String version = "18.1";
 
     public static final int initialBridgeLimit = 4;
 
@@ -1156,7 +1156,7 @@ public class Cars extends JFrame implements CarDisplayI {
     /* The car operations work directly upon the simulator */
 
     public CarI newCar(int no, Color col, Pos pos) {
-        return new CarModel(no, col, pos, sim.getClock());
+        return new CarModel(no, col, pos, sim);
     }
 
     public void register(CarI car) {
@@ -1438,9 +1438,9 @@ class CarModel implements CarI, Tickable {
 
 
     static double slowFactor = 0.3;
-    static double nearFactor = 0.3;
+    static double nearFactor = 0.4;
 
-    static double startDist  = 0.2;  // Unit: Tiles
+    static double startDist  = 0.1;  // Unit: Tiles
 
     /* Using a common background server thread for call-backs */
     static ExecutorService exec = Executors.newSingleThreadExecutor();
@@ -1469,11 +1469,12 @@ class CarModel implements CarI, Tickable {
     static volatile boolean slowdown = false;// Go slow in slowdown area (shared by all cars)
 
     ClockI clk;
+    Simulator<CarModel> sim;
 
     long lastArrival = 0;
     long wpCounter = 0;
 
-    public CarModel(int no, Color col, Pos pos, ClockI clk) {
+    public CarModel(int no, Color col, Pos pos, Simulator<CarModel> sim) {
         this.color = col;
         this.no = no;
 
@@ -1488,7 +1489,8 @@ class CarModel implements CarI, Tickable {
         this.target = wp;
         this.dest   = wp;
 
-        this.clk = clk;
+        this.sim = sim;
+        this.clk = sim.getClock();
 
         nominalSpeed = 4.0; // Fairly slow
 
@@ -1518,7 +1520,14 @@ class CarModel implements CarI, Tickable {
         return addDestination(pos, null);
     }
 
-    synchronized public long addDestination(Pos pos, Runnable callback) {
+    public long addDestination(Pos pos, Runnable callback) {
+        // Do not add while being updated/painted
+        synchronized (sim) {
+            return simLockedAddDestination(pos, callback);
+        }
+    }
+
+    synchronized public long simLockedAddDestination(Pos pos, Runnable callback) {
         // Get canonical position object (checking validity)
         Pos canPos = Layout.canonical(pos);
 
@@ -1634,16 +1643,16 @@ class CarModel implements CarI, Tickable {
         return !arriving(l1) && arriving(l2);
     }
 
-    double breakingDist() {
+    double brakingDist() {
         return (Ground.margin-0.02) + (Math.ceil(nominalSpeed/10.0)-1) * 3 * Ground.margin;
     }
 
     boolean approachingTarget(long l) {
-        return Location.dist(l,target.loc) <= breakingDist();
+        return Location.dist(l,target.loc) <= brakingDist();
     }
 
     boolean nearTarget(long l) {
-        return Location.dist(l,target.loc) <= breakingDist()/2.2; //nearDist;
+        return Location.dist(l,target.loc) <= brakingDist()/2.0;
     }
 
     boolean starting(long l) {
@@ -1664,7 +1673,14 @@ class CarModel implements CarI, Tickable {
                 (CarModel.slowdown && Layout.isSlowPos(Location.position(loc)));
     }
 
-    public synchronized void setSpeed(double speed) {
+    public void setSpeed(double speed) {
+        // Do not change while being updated/painted
+        synchronized (sim) {
+            simLockedSetSpeed(speed);
+        }
+    }
+
+    public synchronized void simLockedSetSpeed(double speed) {
         updateLocation();
         this.nominalSpeed = speed;
         updateLocation();

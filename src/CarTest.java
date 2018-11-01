@@ -25,6 +25,14 @@ public class CarTest extends Thread {
                 cars.stopAll();
                 break;
 
+            case 1: 
+            	//INFINITE SPEED!!!!
+            	cars.println("Engage the warp drive!");
+            	for (int i = 1; i < 9; i++) {
+                    cars.setSpeed(i,-1.0);
+                    cars.setVariation(i,0);
+                };
+                break;
             case 19:
                 // Demonstration of speed setting.
                 cars.println("Setting high speeds");
