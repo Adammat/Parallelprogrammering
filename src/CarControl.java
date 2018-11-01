@@ -83,7 +83,7 @@ class Conductor extends Thread {
         col = chooseColor();
 
         // special settings for car no. 0
-        if (true) {
+        if (no == 0) {
             basespeed = -1.0;  
             variation = 0; 
         }
@@ -310,7 +310,7 @@ class Alley{
 			sems[no-1].P();
 			lock.P();
 		}
-		curDir = no>4;
+		curDir = no>4; //no>4 is the direction of the car with the given number 
 		carCounter++;
 		
 		lock.V();//*/
@@ -321,17 +321,20 @@ class Alley{
 		try {lock.P();} catch (InterruptedException e) {}
 		//Checks if the current car matches the direction
 		if(no>4 == curDir){
+			//Notes that the car has left the alley
 			carCounter--;
 			if (carCounter <= 0){
 				//In case that this is the last car, release the waiting cars
 				carCounter = 0;
-				int offset;
+				
+				//Sets the offset of the cars, so it only frees cars going in the opposite direcetion
+				int offset = 4;
 				if (no>4){
 					offset = 0;
-				} else {
-					offset = 4;
 				}
+				
 				for (int i = offset; i< 4+offset; i++){
+					//Releases any waiting cars
 					if(waiting[i]){
 						waiting[i] = false;
 						sems[i].V();
@@ -361,7 +364,7 @@ class Barrier {
 	Boolean[] waiting = new Boolean[MAX_NO_CARS];  //Flag if the car is waiting
 	int counter = 0;
 	int threshold = MAX_NO_CARS;
-	//int newThreshold = threshold;
+	int newThreshold = threshold;
 	Semaphore lock = new Semaphore(1);
 	
 	
@@ -375,17 +378,20 @@ class Barrier {
 	public void sync(int no) throws InterruptedException {
 		if(flag) {
 			lock.P();
+			
+			//Incremets the number of cars currently waiting
 			counter++;
 			if (counter >= threshold) {
-				//Frees the other cars
+				//If the number of waiting cars exceeds the threshold free the other cars
 				freeCars();
+				lock.V();
 			} else {
+				//Otherwise mark yourself as waiting, release the lock and wait on your semaphore for free cars call
 				waiting[no] = true;
 				lock.V();
-				sems[no].P();
-				lock.P();
+				sems[no].P(); //NB You will never unexpectedly get caught here, since the free cars releases this semaphore due to the waiting array, even though you haven't reached here yet
 			}
-			lock.V();
+			
 		}
 	}
 	
@@ -405,14 +411,20 @@ class Barrier {
 		lock.V();
 	}
 	
-	//Setting the amount of cars that the barrier keeps back
+	//Setting the threshold for the amount of cars that the barrier keeps back
 	public void barrierSet(int k) throws IndexOutOfBoundsException{
 		if(k <= MAX_NO_CARS){
 			try {lock.P();} catch (InterruptedException e) {}
 			//Sets the new threshold
-			threshold = k;
-			if (counter >= threshold){
+			newThreshold = k;
+			
+			//Checks if there currently is waiting more than the new threshold (This updates the threshold)
+			if (counter >= newThreshold){
 				freeCars();
+				
+			//If the new threshold is less than the old, or there are no car, update the threshold immediately  
+			} else if(threshold > newThreshold || counter == 0){ 
+				threshold = newThreshold;
 			}
 			lock.V();
 		}else{
@@ -432,7 +444,8 @@ class Barrier {
 			}
 			
 		}
-		//threshold = newThreshold;
+		//If a new threshold is set updates it.
+		threshold = newThreshold;
 		
 	}
 	
